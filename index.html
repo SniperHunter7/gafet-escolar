@@ -147,9 +147,9 @@ const RUTA_REVERSO_PERSONAJE  = 'Img/TS5.png';
 const CARD_W = 1013, CARD_H = 638;
 
 // Zonas reservadas (deben coincidir con el diseño de los PNG de fondo)
-const ZONA_IMG_FRENTE  = { x:70,  y:70,  w:230, h:498 };
-const ZONA_NOMBRE      = { x:340, y:70,  w:605, h:498 };
-const ZONA_IMG_REVERSO = { x:70,  y:418, w:230, h:150 };
+const ZONA_IMG_FRENTE  = { x:55,  y:55,  w:255, h:510 };
+const ZONA_NOMBRE      = { x:335, y:55,  w:610, h:510 };
+const ZONA_IMG_REVERSO = { x:55,  y:400, w:255, h:194 };
 
 function cargarImagen(src){
   return new Promise((resolve, reject)=>{
@@ -215,7 +215,7 @@ async function dibujarFrente(ctx, imgFondo, imgPersonaje, nombre){
     const { size, lineas, lineHeight } = ajustarNombre(ctx, nombre.trim(), ZONA_NOMBRE, fontFamily);
     ctx.font = `bold ${size}px ${fontFamily}`;
     ctx.fillStyle = '#DC2626';
-    ctx.textAlign = 'left';
+    ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     const alturaTotal = lineas.length * lineHeight;
     let y = ZONA_NOMBRE.y + (ZONA_NOMBRE.h - alturaTotal) / 2 + lineHeight/2;
@@ -233,7 +233,7 @@ async function dibujarReverso(ctx, imgFondo, imgPersonaje, datos){
 
   const fontFamily = "'Trebuchet MS', sans-serif";
   ctx.fillStyle = '#1E293B';
-  ctx.textAlign = 'left';
+  ctx.textAlign = 'center';
   ctx.textBaseline = 'alphabetic';
 
   const campos = [
