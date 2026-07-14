@@ -62,10 +62,12 @@
   #status{margin-top:14px;font-size:0.9rem;min-height:20px;}
   #status.ok{color:#15803D;}
   #status.err{color:var(--danger);}
-  .previews{display:flex;gap:16px;flex-wrap:wrap;justify-content:center;margin-top:10px;}
+  .previews{display:flex;gap:16px;flex-wrap:wrap;justify-content:center;margin-top:16px;}
+  .previews figure{margin:0;text-align:center;}
+  .previews figcaption{font-size:0.8rem;color:var(--muted);margin-bottom:6px;}
   .previews canvas{
     max-width:100%;width:340px;border-radius:10px;box-shadow:0 2px 10px rgba(0,0,0,0.12);
-    border:1px solid var(--border);
+    border:1px solid var(--border);background:#fff;
   }
   footer{text-align:center;color:var(--muted);font-size:0.8rem;margin-top:30px;}
   @media (max-width:560px){.grid{grid-template-columns:1fr;}}
@@ -107,12 +109,12 @@
         <input type="text" id="grado" placeholder='Ej. 3° "G"'>
       </div>
       <div>
-        <label for="telMama">En caso de emergencia — Mamá</label>
-        <input type="tel" id="telMama" placeholder="Teléfono de mamá">
-      </div>
-      <div>
         <label for="telPapa">En caso de emergencia — Papá</label>
         <input type="tel" id="telPapa" placeholder="Teléfono de papá">
+      </div>
+      <div>
+        <label for="telMama">En caso de emergencia — Mamá</label>
+        <input type="tel" id="telMama" placeholder="Teléfono de mamá">
       </div>
       <div class="full">
         <label for="direccion">Dirección</label>
@@ -127,29 +129,38 @@
       <button id="btnLimpiar" type="button">🧹 Borrar datos</button>
     </div>
     <div id="status"></div>
-    <div class="previews" id="previews" style="display:none;">
-      <canvas id="canvasFront" width="1013" height="638"></canvas>
-      <canvas id="canvasBack" width="1013" height="638"></canvas>
+    <div class="previews" id="previews">
+      <figure>
+        <figcaption>Frente</figcaption>
+        <canvas id="canvasFront" width="1011" height="639"></canvas>
+      </figure>
+      <figure>
+        <figcaption>Reverso</figcaption>
+        <canvas id="canvasBack" width="1011" height="639"></canvas>
+      </figure>
     </div>
   </div>
 
-  <footer>Gafete escolar · generado localmente en tu navegador · diseño original</footer>
+  <footer>Gafete escolar · generado localmente en tu navegador</footer>
 </div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <script>
-// ---- Rutas a las imágenes (carpeta images/ del mismo repositorio) ----
-const RUTA_FRENTE_FONDO     = 'Img/front-fondo.png';
-const RUTA_FRENTE_PERSONAJE = 'Img/TS5.png';
-const RUTA_REVERSO_FONDO      = 'Img/back-fondo.png';
-const RUTA_REVERSO_PERSONAJE  = 'Img/TS5.png';
+// ---- Rutas a las plantillas (mismo repositorio, subidas por el usuario) ----
+const RUTA_FRENTE_FONDO  = 'Img/Frente-Fondo.png';
+const RUTA_REVERSO_FONDO = 'Img/Reverso-Fondo.png';
 
-const CARD_W = 1013, CARD_H = 638;
+const CARD_W = 1011, CARD_H = 639;
 
-// Zonas reservadas (deben coincidir con el diseño de los PNG de fondo)
-const ZONA_IMG_FRENTE  = { x:55,  y:55,  w:255, h:510 };
-const ZONA_NOMBRE      = { x:335, y:55,  w:610, h:510 };
-const ZONA_IMG_REVERSO = { x:55,  y:400, w:255, h:194 };
+// ---- Cajas detectadas en las plantillas (coinciden con los recuadros grises) ----
+const CAJA_NOMBRE     = { x:347, y:112, w:647, h:461 }; // frente
+
+const CAJA_ESCUELA    = { x:366, y:42,  w:618, h:56  };
+const CAJA_MAESTRA    = { x:366, y:107, w:619, h:56  };
+const CAJA_GRADO      = { x:434, y:174, w:240, h:55  };
+const CAJA_PAPA       = { x:627, y:239, w:358, h:46.5};
+const CAJA_MAMA       = { x:627, y:285.5, w:358, h:46.5};
+const CAJA_DIRECCION  = { x:352, y:345, w:633, h:227 };
 
 function cargarImagen(src){
   return new Promise((resolve, reject)=>{
@@ -158,16 +169,6 @@ function cargarImagen(src){
     img.onerror = ()=>reject(new Error('No se pudo cargar: ' + src));
     img.src = src;
   });
-}
-
-// Dibuja una imagen ajustada (contain) centrada dentro de un rectángulo
-function dibujarImagenContenida(ctx, img, zona){
-  const escala = Math.min(zona.w / img.width, zona.h / img.height);
-  const w = img.width * escala;
-  const h = img.height * escala;
-  const x = zona.x + (zona.w - w) / 2;
-  const y = zona.y + (zona.h - h) / 2;
-  ctx.drawImage(img, x, y, w, h);
 }
 
 // Parte el texto en líneas que quepan en maxWidth con la fuente ya asignada en ctx
@@ -188,126 +189,89 @@ function partirEnLineas(ctx, texto, maxWidth){
   return lineas;
 }
 
-// Ajusta tamaño de fuente y parte en líneas para que el nombre quepa en la zona reservada
-function ajustarNombre(ctx, texto, zona, fontFamily){
-  let size = 78;
-  const minSize = 26;
-  let lineas, lineHeight;
-  while(size >= minSize){
-    ctx.font = `bold ${size}px ${fontFamily}`;
-    lineas = partirEnLineas(ctx, texto, zona.w);
-    lineHeight = size * 1.18;
-    const alturaTotal = lineas.length * lineHeight;
-    const anchoMax = Math.max(...lineas.map(l=>ctx.measureText(l).width));
-    if(alturaTotal <= zona.h && anchoMax <= zona.w) break;
-    size -= 2;
-  }
-  return { size, lineas, lineHeight };
-}
-
-async function dibujarFrente(ctx, imgFondo, imgPersonaje, nombre){
-  ctx.clearRect(0,0,CARD_W,CARD_H);
-  ctx.drawImage(imgFondo, 0, 0, CARD_W, CARD_H);
-  if(imgPersonaje) dibujarImagenContenida(ctx, imgPersonaje, ZONA_IMG_FRENTE);
-
-  if(nombre && nombre.trim()){
-    const fontFamily = "'Trebuchet MS', sans-serif";
-    const { size, lineas, lineHeight } = ajustarNombre(ctx, nombre.trim(), ZONA_NOMBRE, fontFamily);
-    ctx.font = `bold ${size}px ${fontFamily}`;
-    ctx.fillStyle = '#DC2626';
-    ctx.textAlign = 'left';
-    ctx.textBaseline = 'middle';
-    const alturaTotal = lineas.length * lineHeight;
-    let y = ZONA_NOMBRE.y + (ZONA_NOMBRE.h - alturaTotal) / 2 + lineHeight/2;
-    lineas.forEach(linea=>{
-      ctx.fillText(linea, ZONA_NOMBRE.x, y);
-      y += lineHeight;
-    });
-  }
-}
-
-// Dibuja un valor centrado en el espacio de la línea. Si el texto no cabe en una
-// sola línea ni reduciendo la fuente, y hay espacio libre debajo (antes del
-// siguiente campo), lo reparte en una segunda línea para que sea legible.
-function dibujarCampoCentrado(ctx, texto, xCenter, yBase, maxWidth, espacioDisponibleAbajo, fontFamily){
+// Dibuja un texto centrado (horizontal y vertical) dentro de una caja, ajustando
+// el tamaño de letra y usando varias líneas si la caja tiene alto suficiente
+// (por ejemplo Dirección, que es una caja grande).
+function dibujarValorEnCaja(ctx, texto, caja, fontFamily, opts={}){
   if(!texto || !texto.trim()) return;
   texto = texto.trim();
-  const maxFont = 28, minFont = 16;
-  let size = maxFont;
-  ctx.font = `${size}px ${fontFamily}`;
 
-  // 1) intenta que quepa en una sola línea reduciendo el tamaño
-  while(size > minFont && ctx.measureText(texto).width > maxWidth){
-    size -= 1;
-    ctx.font = `${size}px ${fontFamily}`;
-  }
+  const maxFontSize = opts.maxFontSize || 30;
+  const minFontSize = opts.minFontSize || 14;
+  const paddingX = opts.paddingX ?? 14;
+  const paddingY = opts.paddingY ?? 8;
 
-  if(ctx.measureText(texto).width <= maxWidth){
-    ctx.textAlign = 'center';
-    ctx.fillText(texto, xCenter, yBase);
-    return;
-  }
+  const maxWidth  = caja.w - paddingX * 2;
+  const maxHeight = caja.h - paddingY * 2;
 
-  // 2) no cabe ni al tamaño mínimo en una línea: si hay espacio abajo, usar 2 líneas
-  const lineHeight = minFont * 1.3;
-  if(espacioDisponibleAbajo >= lineHeight){
-    let fontDosLineas = Math.min(24, maxFont);
-    ctx.font = `${fontDosLineas}px ${fontFamily}`;
-    let lineas = partirEnLineas(ctx, texto, maxWidth);
-    while((lineas.length > 2 || lineas.some(l=>ctx.measureText(l).width > maxWidth)) && fontDosLineas > minFont){
-      fontDosLineas -= 1;
-      ctx.font = `${fontDosLineas}px ${fontFamily}`;
-      lineas = partirEnLineas(ctx, texto, maxWidth);
+  let fontSize = maxFontSize;
+  let lineas = [texto];
+  let lineHeight = fontSize * 1.25;
+
+  while(fontSize >= minFontSize){
+    ctx.font = `${fontSize}px ${fontFamily}`;
+    lineas = partirEnLineas(ctx, texto, maxWidth);
+    lineHeight = fontSize * 1.25;
+    const totalHeight = lineas.length * lineHeight;
+    const widestLine = Math.max(...lineas.map(l=>ctx.measureText(l).width));
+    if(totalHeight <= maxHeight && widestLine <= maxWidth){
+      break;
     }
-    const lh = fontDosLineas * 1.3;
-    ctx.textAlign = 'center';
-    let y = yBase;
-    lineas.slice(0,2).forEach(linea=>{
-      ctx.fillText(linea, xCenter, y);
-      y += lh;
-    });
-  } else {
-    // sin espacio para una segunda línea: se queda en una sola al tamaño mínimo
-    ctx.textAlign = 'center';
-    ctx.fillText(texto, xCenter, yBase);
+    fontSize -= 1;
   }
-}
+  if(fontSize < minFontSize) fontSize = minFontSize;
+  ctx.font = `${fontSize}px ${fontFamily}`;
+  lineas = partirEnLineas(ctx, texto, maxWidth);
+  lineHeight = fontSize * 1.25;
 
-async function dibujarReverso(ctx, imgFondo, imgPersonaje, datos){
-  ctx.clearRect(0,0,CARD_W,CARD_H);
-  ctx.drawImage(imgFondo, 0, 0, CARD_W, CARD_H);
-  if(imgPersonaje) dibujarImagenContenida(ctx, imgPersonaje, ZONA_IMG_REVERSO);
+  // Si aun así no cabe verticalmente, recorta a las líneas que sí quepan
+  const maxLineas = Math.max(1, Math.floor(maxHeight / lineHeight));
+  if(lineas.length > maxLineas) lineas = lineas.slice(0, maxLineas);
 
-  const fontFamily = "'Trebuchet MS', sans-serif";
-  ctx.fillStyle = '#1E293B';
-  ctx.textBaseline = 'alphabetic';
+  const totalHeight = lineas.length * lineHeight;
+  const xCenter = caja.x + caja.w / 2;
+  let y = caja.y + (caja.h - totalHeight) / 2 + lineHeight / 2;
 
-  // Línea guía de cada campo: va de LINEA_X_INICIO a LINEA_X_FIN (debe coincidir con el fondo)
-  const LINEA_X_INICIO = 575, LINEA_X_FIN = 945;
-  const xCenter   = (LINEA_X_INICIO + LINEA_X_FIN) / 2;
-  const maxWidth  = LINEA_X_FIN - LINEA_X_INICIO;
-
-  const campos = [
-    { texto: datos.escuela,   y:100, espacioAbajo: 40 },
-    { texto: datos.maestra,   y:155, espacioAbajo: 40 },
-    { texto: datos.grado,     y:210, espacioAbajo: 40 },
-    { texto: datos.telMama,   y:315, espacioAbajo: 35 },
-    { texto: datos.telPapa,   y:365, espacioAbajo: 40 },
-    { texto: datos.direccion, y:430, espacioAbajo: 150 }
-  ];
-
-  campos.forEach(c=>{
-    dibujarCampoCentrado(ctx, c.texto, xCenter, c.y, maxWidth, c.espacioAbajo, fontFamily);
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  lineas.forEach(linea=>{
+    ctx.fillText(linea, xCenter, y);
+    y += lineHeight;
   });
 }
 
+async function dibujarFrente(ctx, imgFondo, nombre){
+  ctx.clearRect(0,0,CARD_W,CARD_H);
+  ctx.drawImage(imgFondo, 0, 0, CARD_W, CARD_H);
+
+  const fontFamily = "'Trebuchet MS', sans-serif";
+  ctx.fillStyle = '#DC2626';
+  dibujarValorEnCaja(ctx, nombre, CAJA_NOMBRE, fontFamily, {
+    maxFontSize: 70, minFontSize: 26, paddingX: 20, paddingY: 20
+  });
+}
+
+async function dibujarReverso(ctx, imgFondo, datos){
+  ctx.clearRect(0,0,CARD_W,CARD_H);
+  ctx.drawImage(imgFondo, 0, 0, CARD_W, CARD_H);
+
+  const fontFamily = "'Trebuchet MS', sans-serif";
+  ctx.fillStyle = '#1E293B';
+
+  dibujarValorEnCaja(ctx, datos.escuela,   CAJA_ESCUELA,   fontFamily);
+  dibujarValorEnCaja(ctx, datos.maestra,   CAJA_MAESTRA,   fontFamily);
+  dibujarValorEnCaja(ctx, datos.grado,     CAJA_GRADO,     fontFamily);
+  dibujarValorEnCaja(ctx, datos.telPapa,   CAJA_PAPA,      fontFamily, {maxFontSize:26});
+  dibujarValorEnCaja(ctx, datos.telMama,   CAJA_MAMA,      fontFamily, {maxFontSize:26});
+  dibujarValorEnCaja(ctx, datos.direccion, CAJA_DIRECCION, fontFamily, {maxFontSize:28, minFontSize:16});
+}
+
 function limpiarFormulario(){
-  ['nombre','escuela','maestra','grado','telMama','telPapa','direccion'].forEach(id=>{
+  ['nombre','escuela','maestra','grado','telPapa','telMama','direccion'].forEach(id=>{
     document.getElementById(id).value = '';
   });
   document.getElementById('status').textContent = '';
   document.getElementById('status').className = '';
-  document.getElementById('previews').style.display = 'none';
   const cf = document.getElementById('canvasFront').getContext('2d');
   const cb = document.getElementById('canvasBack').getContext('2d');
   cf.clearRect(0,0,CARD_W,CARD_H);
@@ -327,8 +291,8 @@ document.getElementById('btnGenerar').addEventListener('click', async ()=>{
     escuela:    document.getElementById('escuela').value.trim(),
     maestra:    document.getElementById('maestra').value.trim(),
     grado:      document.getElementById('grado').value.trim(),
-    telMama:    document.getElementById('telMama').value.trim(),
     telPapa:    document.getElementById('telPapa').value.trim(),
+    telMama:    document.getElementById('telMama').value.trim(),
     direccion:  document.getElementById('direccion').value.trim()
   };
 
@@ -341,11 +305,9 @@ document.getElementById('btnGenerar').addEventListener('click', async ()=>{
   statusEl.textContent = 'Generando PDF...';
 
   try{
-    const [imgFrenteFondo, imgFrentePersonaje, imgReversoFondo, imgReversoPersonaje] = await Promise.all([
+    const [imgFrenteFondo, imgReversoFondo] = await Promise.all([
       cargarImagen(RUTA_FRENTE_FONDO),
-      cargarImagen(RUTA_FRENTE_PERSONAJE).catch(()=>null),
-      cargarImagen(RUTA_REVERSO_FONDO),
-      cargarImagen(RUTA_REVERSO_PERSONAJE).catch(()=>null)
+      cargarImagen(RUTA_REVERSO_FONDO)
     ]);
 
     const canvasFront = document.getElementById('canvasFront');
@@ -353,10 +315,8 @@ document.getElementById('btnGenerar').addEventListener('click', async ()=>{
     const ctxFront = canvasFront.getContext('2d');
     const ctxBack  = canvasBack.getContext('2d');
 
-    await dibujarFrente(ctxFront, imgFrenteFondo, imgFrentePersonaje, datos.nombre);
-    await dibujarReverso(ctxBack, imgReversoFondo, imgReversoPersonaje, datos);
-
-    document.getElementById('previews').style.display = 'flex';
+    await dibujarFrente(ctxFront, imgFrenteFondo, datos.nombre);
+    await dibujarReverso(ctxBack, imgReversoFondo, datos);
 
     const { jsPDF } = window.jspdf;
     // Una sola página: frente a la izquierda, reverso a la derecha
