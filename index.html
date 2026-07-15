@@ -62,11 +62,13 @@
   #status{margin-top:14px;font-size:0.9rem;min-height:20px;}
   #status.ok{color:#15803D;}
   #status.err{color:var(--danger);}
-  .previews{display:flex;gap:16px;flex-wrap:wrap;justify-content:center;margin-top:16px;}
+  
+  /* Contenedor de previsualizaciones */
+  .previews{display:flex;gap:16px;flex-wrap:wrap;justify-content:center;}
   .previews figure{margin:0;text-align:center;}
-  .previews figcaption{font-size:0.8rem;color:var(--muted);margin-bottom:6px;}
+  .previews figcaption{font-size:0.8rem;color:var(--muted);margin-bottom:6px;font-weight:bold;}
   .previews canvas{
-    max-width:100%;width:340px;border-radius:10px;box-shadow:0 2px 10px rgba(0,0,0,0.12);
+    max-width:100%;width:320px;border-radius:10px;box-shadow:0 2px 10px rgba(0,0,0,0.12);
     border:1px solid var(--border);background:#fff;
   }
   footer{text-align:center;color:var(--muted);font-size:0.8rem;margin-top:30px;}
@@ -81,6 +83,20 @@
   <div class="privacy">
     <span class="icon">🔒</span>
     <span>Tus datos se procesan <strong>únicamente en este navegador</strong> para armar el PDF. No se envían a ningún servidor, no se guardan en ningún lado, y se borran de la memoria de la página en cuanto el PDF se genera.</span>
+  </div>
+
+  <div class="card">
+    <h2>Vista previa en tiempo real</h2>
+    <div class="previews" id="previews">
+      <figure>
+        <figcaption>Frente</figcaption>
+        <canvas id="canvasFront" width="1011" height="639"></canvas>
+      </figure>
+      <figure>
+        <figcaption>Reverso</figcaption>
+        <canvas id="canvasBack" width="1011" height="639"></canvas>
+      </figure>
+    </div>
   </div>
 
   <div class="card">
@@ -129,16 +145,6 @@
       <button id="btnLimpiar" type="button">🧹 Borrar datos</button>
     </div>
     <div id="status"></div>
-    <div class="previews" id="previews">
-      <figure>
-        <figcaption>Frente</figcaption>
-        <canvas id="canvasFront" width="1011" height="639"></canvas>
-      </figure>
-      <figure>
-        <figcaption>Reverso</figcaption>
-        <canvas id="canvasBack" width="1011" height="639"></canvas>
-      </figure>
-    </div>
   </div>
 
   <footer>Gafete escolar · generado localmente en tu navegador</footer>
@@ -161,6 +167,10 @@ const CAJA_GRADO      = { x:434, y:174, w:240, h:55  };
 const CAJA_PAPA       = { x:627, y:239, w:358, h:46.5};
 const CAJA_MAMA       = { x:627, y:285.5, w:358, h:46.5};
 const CAJA_DIRECCION  = { x:352, y:345, w:633, h:227 };
+
+// Caché para mantener las imágenes cargadas y optimizar el rendimiento
+let imgFrenteFondoGlobal = null;
+let imgReversoFondoGlobal = null;
 
 function cargarImagen(src){
   return new Promise((resolve, reject)=>{
@@ -191,7 +201,6 @@ function partirEnLineas(ctx, texto, maxWidth){
 
 // Dibuja un texto centrado (horizontal y vertical) dentro de una caja, ajustando
 // el tamaño de letra y usando varias líneas si la caja tiene alto suficiente
-// (por ejemplo Dirección, que es una caja grande).
 function dibujarValorEnCaja(ctx, texto, caja, fontFamily, opts={}){
   if(!texto || !texto.trim()) return;
   texto = texto.trim();
@@ -224,7 +233,6 @@ function dibujarValorEnCaja(ctx, texto, caja, fontFamily, opts={}){
   lineas = partirEnLineas(ctx, texto, maxWidth);
   lineHeight = fontSize * 1.25;
 
-  // Si aun así no cabe verticalmente, recorta a las líneas que sí quepan
   const maxLineas = Math.max(1, Math.floor(maxHeight / lineHeight));
   if(lineas.length > maxLineas) lineas = lineas.slice(0, maxLineas);
 
@@ -240,30 +248,59 @@ function dibujarValorEnCaja(ctx, texto, caja, fontFamily, opts={}){
   });
 }
 
-async function dibujarFrente(ctx, imgFondo, nombre){
-  ctx.clearRect(0,0,CARD_W,CARD_H);
-  ctx.drawImage(imgFondo, 0, 0, CARD_W, CARD_H);
+// Función encargada de actualizar los Canvas en tiempo real
+async function actualizarVistaPrevia(){
+  try{
+    // Carga inicial y almacenamiento en caché de los fondos
+    if (!imgFrenteFondoGlobal || !imgReversoFondoGlobal) {
+      const [imgFrente, imgReverso] = await Promise.all([
+        cargarImagen(RUTA_FRENTE_FONDO),
+        cargarImagen(RUTA_REVERSO_FONDO)
+      ]);
+      imgFrenteFondoGlobal = imgFrente;
+      imgReversoFondoGlobal = imgReverso;
+    }
 
-  const fontFamily = "'Trebuchet MS', sans-serif";
-  ctx.fillStyle = '#DC2626';
-  dibujarValorEnCaja(ctx, nombre, CAJA_NOMBRE, fontFamily, {
-    maxFontSize: 70, minFontSize: 26, paddingX: 20, paddingY: 20
-  });
-}
+    const datos = {
+      nombre:     document.getElementById('nombre').value.trim(),
+      escuela:    document.getElementById('escuela').value.trim(),
+      maestra:    document.getElementById('maestra').value.trim(),
+      grado:      document.getElementById('grado').value.trim(),
+      telPapa:    document.getElementById('telPapa').value.trim(),
+      telMama:    document.getElementById('telMama').value.trim(),
+      direccion:  document.getElementById('direccion').value.trim()
+    };
 
-async function dibujarReverso(ctx, imgFondo, datos){
-  ctx.clearRect(0,0,CARD_W,CARD_H);
-  ctx.drawImage(imgFondo, 0, 0, CARD_W, CARD_H);
+    const canvasFront = document.getElementById('canvasFront');
+    const canvasBack  = document.getElementById('canvasBack');
+    const ctxFront = canvasFront.getContext('2d');
+    const ctxBack  = canvasBack.getContext('2d');
 
-  const fontFamily = "'Trebuchet MS', sans-serif";
-  ctx.fillStyle = '#1E293B';
+    // --- Dibujar Frente ---
+    ctxFront.clearRect(0, 0, CARD_W, CARD_H);
+    ctxFront.drawImage(imgFrenteFondoGlobal, 0, 0, CARD_W, CARD_H);
 
-  dibujarValorEnCaja(ctx, datos.escuela,   CAJA_ESCUELA,   fontFamily);
-  dibujarValorEnCaja(ctx, datos.maestra,   CAJA_MAESTRA,   fontFamily);
-  dibujarValorEnCaja(ctx, datos.grado,     CAJA_GRADO,     fontFamily);
-  dibujarValorEnCaja(ctx, datos.telPapa,   CAJA_PAPA,      fontFamily, {maxFontSize:26});
-  dibujarValorEnCaja(ctx, datos.telMama,   CAJA_MAMA,      fontFamily, {maxFontSize:26});
-  dibujarValorEnCaja(ctx, datos.direccion, CAJA_DIRECCION, fontFamily, {maxFontSize:28, minFontSize:16});
+    const fontFamily = "'Trebuchet MS', sans-serif";
+    ctxFront.fillStyle = '#DC2626';
+    dibujarValorEnCaja(ctxFront, datos.nombre, CAJA_NOMBRE, fontFamily, {
+      maxFontSize: 70, minFontSize: 26, paddingX: 20, paddingY: 20
+    });
+
+    // --- Dibujar Reverso ---
+    ctxBack.clearRect(0, 0, CARD_W, CARD_H);
+    ctxBack.drawImage(imgReversoFondoGlobal, 0, 0, CARD_W, CARD_H);
+    ctxBack.fillStyle = '#1E293B';
+
+    dibujarValorEnCaja(ctxBack, datos.escuela,   CAJA_ESCUELA,   fontFamily);
+    dibujarValorEnCaja(ctxBack, datos.maestra,   CAJA_MAESTRA,   fontFamily);
+    dibujarValorEnCaja(ctxBack, datos.grado,     CAJA_GRADO,     fontFamily);
+    dibujarValorEnCaja(ctxBack, datos.telPapa,   CAJA_PAPA,      fontFamily, {maxFontSize:26});
+    dibujarValorEnCaja(ctxBack, datos.telMama,   CAJA_MAMA,      fontFamily, {maxFontSize:26});
+    dibujarValorEnCaja(ctxBack, datos.direccion, CAJA_DIRECCION, fontFamily, {maxFontSize:28, minFontSize:16});
+
+  }catch(err){
+    console.error("Error al actualizar la vista previa: ", err);
+  }
 }
 
 function limpiarFormulario(){
@@ -272,11 +309,14 @@ function limpiarFormulario(){
   });
   document.getElementById('status').textContent = '';
   document.getElementById('status').className = '';
-  const cf = document.getElementById('canvasFront').getContext('2d');
-  const cb = document.getElementById('canvasBack').getContext('2d');
-  cf.clearRect(0,0,CARD_W,CARD_H);
-  cb.clearRect(0,0,CARD_W,CARD_H);
+  actualizarVistaPrevia();
 }
+
+// ---- ESCUCHADORES DE EVENTOS EN TIEMPO REAL ----
+const inputs = ['nombre','escuela','maestra','grado','telPapa','telMama','direccion'];
+inputs.forEach(id => {
+  document.getElementById(id).addEventListener('input', actualizarVistaPrevia);
+});
 
 document.getElementById('btnLimpiar').addEventListener('click', limpiarFormulario);
 
@@ -285,18 +325,9 @@ document.getElementById('btnGenerar').addEventListener('click', async ()=>{
   statusEl.className = '';
   statusEl.textContent = '';
 
-  // Datos capturados: viven SOLO en esta variable local, nunca se guardan ni se envían.
-  const datos = {
-    nombre:     document.getElementById('nombre').value.trim(),
-    escuela:    document.getElementById('escuela').value.trim(),
-    maestra:    document.getElementById('maestra').value.trim(),
-    grado:      document.getElementById('grado').value.trim(),
-    telPapa:    document.getElementById('telPapa').value.trim(),
-    telMama:    document.getElementById('telMama').value.trim(),
-    direccion:  document.getElementById('direccion').value.trim()
-  };
+  const nombre = document.getElementById('nombre').value.trim();
 
-  if(!datos.nombre){
+  if(!nombre){
     statusEl.textContent = 'Falta el nombre del alumno(a).';
     statusEl.className = 'err';
     return;
@@ -305,21 +336,13 @@ document.getElementById('btnGenerar').addEventListener('click', async ()=>{
   statusEl.textContent = 'Generando PDF...';
 
   try{
-    const [imgFrenteFondo, imgReversoFondo] = await Promise.all([
-      cargarImagen(RUTA_FRENTE_FONDO),
-      cargarImagen(RUTA_REVERSO_FONDO)
-    ]);
+    // Asegurar que los lienzos estén sincronizados antes de capturar el PDF
+    await actualizarVistaPrevia();
 
     const canvasFront = document.getElementById('canvasFront');
     const canvasBack  = document.getElementById('canvasBack');
-    const ctxFront = canvasFront.getContext('2d');
-    const ctxBack  = canvasBack.getContext('2d');
-
-    await dibujarFrente(ctxFront, imgFrenteFondo, datos.nombre);
-    await dibujarReverso(ctxBack, imgReversoFondo, datos);
 
     const { jsPDF } = window.jspdf;
-    // Una sola página: frente a la izquierda, reverso a la derecha
     const pageW = 186.2, pageH = 64; // mm
     const pdf = new jsPDF({ unit:'mm', format:[pageW, pageH], orientation:'landscape' });
 
@@ -329,14 +352,13 @@ document.getElementById('btnGenerar').addEventListener('click', async ()=>{
     pdf.addImage(frontData, 'PNG', 5, 5, 85.6, 54);
     pdf.addImage(backData,  'PNG', 95.6, 5, 85.6, 54);
 
-    const nombreArchivo = `gafete_${datos.nombre.replace(/\s+/g,'_')}.pdf`;
+    const nombreArchivo = `gafete_${nombre.replace(/\s+/g,'_')}.pdf`;
     pdf.save(nombreArchivo);
 
     statusEl.textContent = '✅ PDF generado y descargado. Borrando los datos del formulario...';
     statusEl.className = 'ok';
 
     setTimeout(()=>{
-      for(const k in datos){ datos[k] = null; }
       limpiarFormulario();
       statusEl.textContent = '✅ PDF descargado. Los datos capturados fueron eliminados de esta página.';
       statusEl.className = 'ok';
@@ -348,6 +370,9 @@ document.getElementById('btnGenerar').addEventListener('click', async ()=>{
     statusEl.className = 'err';
   }
 });
+
+// Renderizar las imágenes por primera vez al iniciar la página
+window.addEventListener('DOMContentLoaded', actualizarVistaPrevia);
 </script>
 </body>
 </html>
